@@ -1,0 +1,16 @@
+This version of pico11 is patched to work on DEMOS (Soviet UNIX):
+
+- K&R C functions declarations
+- no unsigned char
+- added compat.c with backported functions
+
+Then, it gets compiled and works on DEMOS.
+But, because of full terminal refresh, it's very slow.
+
+And no Cyrillic support (yet).
+
+pico11 is renamed to 'novi' by its author, Dave Plumber:
+https://github.com/davepl/pdpsrc/tree/main/bsd/novi
+
+but this version keeps the name because I got it when it was pico11.
+

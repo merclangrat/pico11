@@ -2,7 +2,7 @@
 #include <sys/ioctl.h>
 #include <string.h>
 #include <stdio.h>
-#include "pdp11_compat.h"
+#include "pdpcompat.h"
 #include "terminal.h"
 
 #if defined(pdp11) || defined(__pdp11__)
@@ -20,7 +20,7 @@ static struct termios saved_tty;
 static int opened;
 
 int
-term_open(void)
+t_open()
 {
 #ifdef PICO_SGTTY
 	struct sgttyb t;
@@ -48,26 +48,28 @@ term_open(void)
 		return -1;
 #endif
 	opened = 1;
-	term_put("\033[?25l");
+/*	t_put("\033[?25l"); */
 	return 0;
 }
 
-void
-term_close(void)
+t_close()
 {
 	if (!opened)
 		return;
-	term_put("\033[?25h\033[0m\033[H\033[J");
+	/* doesn't work on DEMOS/VT52 */
+	/* t_put("\033[?25h\033[0m\033[H\033[J"); */
+	t_put("\033H\033J");
 #ifdef PICO_SGTTY
-	(void)stty(0, &saved_tty);
+	stty(0, &saved_tty);
 #else
-	(void)tcsetattr(0, TCSAFLUSH, &saved_tty);
+	tcsetattr(0, TCSAFLUSH, &saved_tty);
 #endif
 	opened = 0;
 }
 
-void
-term_size(int *rows, int *cols)
+t_size(rows, cols)
+int* rows;
+int* cols;
 {
 #ifdef TIOCGWINSZ
 	struct winsize w;
@@ -82,9 +84,15 @@ term_size(int *rows, int *cols)
 	*cols = 80;
 }
 
-void
-term_write(char *s, int n)
+t_write(s, n)
+char* s;
+int n;
 {
+	/* This function looks strange because
+	just write can be used, if we don't
+	check the result.
+	Maybe, I couldn't catch the idea. -- AS */
+	/*
 	int done;
 	int k;
 
@@ -95,33 +103,36 @@ term_write(char *s, int n)
 			return;
 		done += k;
 	}
+	*/
+	write (1, s, n);
 }
 
-void
-term_put(char *s)
+t_put(s)
+char* s;
 {
-	term_write(s, strlen(s));
+	t_write(s, strlen(s));
 }
 
-void
-term_move(int row, int col)
+t_move(row, col)
+int row, col;
 {
 	char seq[32];
 
-	(void)sprintf(seq, "\033[%d;%dH", row + 1, col + 1);
-	term_put(seq);
+	/* sprintf(seq, "\033[%d;%dH", row + 1, col + 1); */
+	/* DEMOS terminal -- AS */
+	sprintf(seq, "\033Y%c%c", row + 32, col + 32);
+	t_put(seq);
 }
 
-void
-term_clear(void)
+t_clear()
 {
-	term_put("\033[H\033[J");
+	t_put("\033H\033J");
 }
 
 static int
-readone(void)
+readone()
 {
-	unsigned char c;
+	char c;
 
 	if (read(0, (char *)&c, 1) != 1)
 		return -1;
@@ -129,18 +140,20 @@ readone(void)
 }
 
 int
-term_key(void)
+t_key()
 {
 	int a;
-	int b;
+	/*int b;*/
 	int c;
+	char s[3];
 
 	a = readone();
 	if (a != 27)
 		return a;
-	b = readone();
+	/* DEMOS/VT52 doesn't need [ after Esc -- AS */
+	/*b = readone();
 	if (b != '[' && b != 'O')
-		return 27;
+		return 27;*/
 	c = readone();
 	if (c == 'A') return KEY_UP;
 	if (c == 'B') return KEY_DOWN;

@@ -5,6 +5,8 @@
 
 #define BUF_CACHE 256
 
+extern int errno;
+
 struct buffer {
 	int left;
 	int right;
@@ -14,20 +16,20 @@ struct buffer {
 	int cachefd;
 	off_t cachebase;
 	int cachelen;
-	unsigned char cache[BUF_CACHE];
+	char cache[BUF_CACHE];
 };
 
-int buf_open(struct buffer *b, char *name);
-void buf_close(struct buffer *b);
-off_t buf_size(struct buffer *b);
-off_t buf_pos(struct buffer *b);
-int buf_get(struct buffer *b, off_t pos);
-int buf_insert(struct buffer *b, int ch);
-int buf_backspace(struct buffer *b);
-int buf_delete(struct buffer *b);
-int buf_left(struct buffer *b);
-int buf_right(struct buffer *b);
-int buf_seek(struct buffer *b, off_t pos);
-int buf_save(struct buffer *b, char *name);
+int b_open();
+b_close();
+off_t b_size();
+off_t b_pos();
+int b_get();
+int b_insert();
+int b_backspace();
+int b_delete();
+int b_left();
+int b_right();
+int b_seek();
+int b_save();
 
 #endif

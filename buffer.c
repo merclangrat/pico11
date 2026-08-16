@@ -3,10 +3,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include "pdp11_compat.h"
+#include "pdpcompat.h"
 #include "buffer.h"
 
 #ifndef O_BINARY
@@ -14,12 +13,12 @@
 #endif
 
 static int
-scratch(void)
+scratch()
 {
 	char path[32];
 	int fd;
 
-	(void)strcpy(path, "/tmp/pico11XXXXXX");
+	strcpy(path, "/tmp/p11XXXX");
 	fd = mkstemp(path);
 	if (fd >= 0)
 		(void)unlink(path);
@@ -27,25 +26,30 @@ scratch(void)
 }
 
 static void
-uncache(struct buffer *b)
+uncache(b)
+struct buffer* b;
 {
 	b->cachefd = -1;
 	b->cachelen = 0;
 }
 
 static int
-putone(int fd, int ch)
+putone(fd, ch)
+int fd;
+int ch;
 {
-	unsigned char c;
+	char c;
 
-	c = (unsigned char)ch;
+	c = ch;
 	return write(fd, (char *)&c, 1) == 1 ? 0 : -1;
 }
 
 static int
-popone(int fd, off_t *len)
+popone(fd, len)
+int fd;
+off_t* len;
 {
-	unsigned char c;
+	char c;
 
 	if (*len == 0)
 		return -1;
@@ -60,7 +64,9 @@ popone(int fd, off_t *len)
 }
 
 int
-buf_open(struct buffer *b, char *name)
+b_open(b, name)
+struct buffer* b;
+char* name;
 {
 	int in;
 	char block[BUF_CACHE];
@@ -88,14 +94,14 @@ buf_open(struct buffer *b, char *name)
 	}
 	end = lseek(in, (off_t)0, L_XTND);
 	if (end < 0) {
-		(void)close(in);
+		close(in);
 		return -1;
 	}
 	while (end > 0) {
 		n = end > BUF_CACHE ? BUF_CACHE : (int)end;
 		left = end - n;
 		if (lseek(in, left, L_SET) < 0 || read(in, block, n) != n) {
-			(void)close(in);
+			close(in);
 			return -1;
 		}
 		for (i = 0; i < n / 2; ++i) {
@@ -104,18 +110,18 @@ buf_open(struct buffer *b, char *name)
 			block[n - 1 - i] = swap;
 		}
 		if (write(b->right, block, n) != n) {
-			(void)close(in);
+			close(in);
 			return -1;
 		}
 		b->nright += n;
 		end = left;
 	}
-	(void)close(in);
+	close(in);
 	return 0;
 }
 
-void
-buf_close(struct buffer *b)
+b_close(b)
+struct buffer* b;
 {
 	if (b->left >= 0)
 		(void)close(b->left);
@@ -125,26 +131,30 @@ buf_close(struct buffer *b)
 }
 
 off_t
-buf_size(struct buffer *b)
+b_size(b)
+struct buffer* b;
 {
 	return b->nleft + b->nright;
 }
 
 off_t
-buf_pos(struct buffer *b)
+b_pos(b)
+struct buffer* b;
 {
 	return b->nleft;
 }
 
 int
-buf_get(struct buffer *b, off_t pos)
+b_get(b, pos)
+struct buffer* b;
+off_t pos;
 {
 	int fd;
 	off_t physical;
 	off_t base;
 	int n;
 
-	if (pos < 0 || pos >= buf_size(b))
+	if (pos < 0 || pos >= b_size(b))
 		return -1;
 	if (pos < b->nleft) {
 		fd = b->left;
@@ -169,7 +179,9 @@ buf_get(struct buffer *b, off_t pos)
 }
 
 int
-buf_insert(struct buffer *b, int ch)
+b_insert(b, ch)
+struct buffer* b;
+int ch;
 {
 	if (lseek(b->left, b->nleft, L_SET) < 0 || putone(b->left, ch) < 0)
 		return -1;
@@ -180,7 +192,8 @@ buf_insert(struct buffer *b, int ch)
 }
 
 int
-buf_backspace(struct buffer *b)
+b_backspace(b)
+struct buffer *b;
 {
 	int ch;
 
@@ -193,7 +206,8 @@ buf_backspace(struct buffer *b)
 }
 
 int
-buf_delete(struct buffer *b)
+b_delete(b)
+struct buffer* b;
 {
 	int ch;
 
@@ -206,7 +220,8 @@ buf_delete(struct buffer *b)
 }
 
 int
-buf_left(struct buffer *b)
+b_left(b)
+struct buffer* b;
 {
 	int ch;
 
@@ -221,7 +236,8 @@ buf_left(struct buffer *b)
 }
 
 int
-buf_right(struct buffer *b)
+b_right(b)
+struct buffer* b;
 {
 	int ch;
 
@@ -236,23 +252,27 @@ buf_right(struct buffer *b)
 }
 
 int
-buf_seek(struct buffer *b, off_t pos)
+b_seek(b, pos)
+struct buffer* b;
+off_t pos;
 {
-	if (pos < 0 || pos > buf_size(b))
+	if (pos < 0 || pos > b_size(b))
 		return -1;
 	while (b->nleft > pos) {
-		if (buf_left(b) < 0)
+		if (b_left(b) < 0)
 			return -1;
 	}
 	while (b->nleft < pos) {
-		if (buf_right(b) < 0)
+		if (b_right(b) < 0)
 			return -1;
 	}
 	return 0;
 }
 
 static int
-copy_forward(int out, int in, off_t len)
+copy_forward(out, in, len)
+int out, in;
+off_t len;
 {
 	char block[BUF_CACHE];
 	int want;
@@ -271,7 +291,9 @@ copy_forward(int out, int in, off_t len)
 }
 
 static int
-copy_reverse(int out, int in, off_t len)
+copy_reverse(out, in, len)
+int out, in;
+off_t len;
 {
 	char block[BUF_CACHE];
 	char rev[BUF_CACHE];
@@ -298,9 +320,11 @@ copy_reverse(int out, int in, off_t len)
 }
 
 int
-buf_save(struct buffer *b, char *name)
+b_save(b, name)
+struct buffer* b;
+char* name;
 {
-	char temp[512];
+	char temp[256];
 	char *slash;
 	struct stat st;
 	int out;
@@ -309,28 +333,29 @@ buf_save(struct buffer *b, char *name)
 
 	if (strlen(name) > sizeof temp - 16)
 		return -1;
-	slash = strrchr(name, '/');
+	slash = rindex(name, '/');
 	if (slash != (char *)0) {
-		(void)memcpy(temp, name, slash - name + 1);
+		memcpy(temp, name, slash - name + 1);
 		temp[slash - name + 1] = '\0';
-		(void)strcat(temp, ".p11XXXXXX");
+		strcat(temp, ".pXXXX");
 	} else
-		(void)strcpy(temp, ".p11XXXXXX");
+		strcpy(temp, ".pXXXX");
 	have_mode = stat(name, &st) == 0;
-	out = mkstemp(temp);
+	mktemp(temp); /* use mktemp for chmod -- AS */
+	out = open(temp, O_CREAT|O_EXCL|O_RDWR, 0644);
 	if (out < 0)
 		return -1;
-	if (have_mode)
-		(void)fchmod(out, st.st_mode & 07777);
 	ok = copy_forward(out, b->left, b->nleft);
 	if (ok == 0)
 		ok = copy_reverse(out, b->right, b->nright);
 	if (close(out) < 0)
 		ok = -1;
+	if (have_mode)
+		chmod(temp, st.st_mode & 07777); 
 	if (ok == 0 && rename(temp, name) < 0)
 		ok = -1;
 	if (ok < 0)
-		(void)unlink(temp);
+		unlink(temp);
 	else
 		b->changed = 0;
 	return ok;

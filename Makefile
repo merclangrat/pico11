@@ -1,33 +1,33 @@
 CC=cc
 CFLAGS=-O
-LDFLAGS=
-OBJS=pico11.o buffer.o terminal.o
+LDFLAGS=-n
+OBJS=pico11.o buffer.o terminal.o compat.o
 
 all: pico11
 
-test: test_buffer
-	./test_buffer
+test: testbuf
+	./testbuf
 
-test_buffer: test_buffer.o buffer.o
-	$(CC) $(LDFLAGS) -o test_buffer test_buffer.o buffer.o
+testbuf: testbuf.o buffer.o compat.o
+	$(CC) $(LDFLAGS) -o testbuf testbuf.o buffer.o compat.o
 
-test_buffer.o: test_buffer.c buffer.h pdp11_compat.h
-	$(CC) $(CFLAGS) -c test_buffer.c
+testbuf.o: testbuf.c buffer.h pdpcompat.h
+	$(CC) $(CFLAGS) -c testbuf.c
 
 pico11: $(OBJS)
-	case "`uname -s`" in \
-	2.11BSD) $(CC) -i $(LDFLAGS) -o pico11 $(OBJS) ;; \
-	*) $(CC) $(LDFLAGS) -o pico11 $(OBJS) ;; \
-	esac
+	$(CC) $(LDFLAGS) -o pico11 $(OBJS)
 
-pico11.o: pico11.c buffer.h terminal.h pdp11_compat.h
+pico11.o: pico11.c buffer.h terminal.h pdpcompat.h
 	$(CC) $(CFLAGS) -c pico11.c
 
-buffer.o: buffer.c buffer.h pdp11_compat.h
+buffer.o: buffer.c buffer.h pdpcompat.h
 	$(CC) $(CFLAGS) -c buffer.c
 
-terminal.o: terminal.c terminal.h pdp11_compat.h
+terminal.o: terminal.c terminal.h pdpcompat.h
 	$(CC) $(CFLAGS) -c terminal.c
 
+compat.o: compat.c
+	$(CC) $(CFLAGS) -c compat.c
+
 clean:
-	rm -f pico11 test_buffer test_buffer.o $(OBJS)
+	rm -f pico11 testbuf testbuf.o $(OBJS)

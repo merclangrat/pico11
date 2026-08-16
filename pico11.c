@@ -3,12 +3,13 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include "pdp11_compat.h"
+#include "pdpcompat.h"
 #include "buffer.h"
 #include "terminal.h"
+
+extern char *sys_errlist[];
 
 #define MAXNAME 255
 #define MAXCOLS 160
@@ -29,72 +30,82 @@ struct editor {
 
 static struct editor E;
 
-static off_t line_start(struct buffer *b, off_t p);
-static off_t line_end(struct buffer *b, off_t p);
-static off_t next_line(struct buffer *b, off_t p);
-static int visual_col(struct buffer *b, off_t p);
-static void refresh(void);
+static off_t line_start();
+static off_t line_end();
+static off_t next_line();
+static int visual_col();
+static refresh();
 
-static int
-on_line(off_t cur, off_t start, off_t next)
+static int on_line(cur,start,next)
+off_t cur, start, next;
 {
 	off_t n;
 
-	n = buf_size(&E.text);
+	n = b_size(&E.text);
 	return cur >= start && (cur < next ||
 	    (cur == n && line_end(&E.text, start) == n));
 }
 
 static void
-die(int sig)
+die(sig)
+int sig;
 {
-	term_close();
-	buf_close(&E.text);
+	t_close();
+	b_close(&E.text);
 	if (E.cutfd >= 0)
-		(void)close(E.cutfd);
+		close(E.cutfd);
 	if (sig)
 		_exit(1);
 }
 
 static void
-message(char *s)
+message(s)
+char* s;
 {
-	(void)strncpy(E.message, s, MAXCOLS);
+	strncpy(E.message, s, MAXCOLS);
 	E.message[MAXCOLS] = '\0';
 }
 
 static off_t
-line_start(struct buffer *b, off_t p)
+line_start(b,p)
+struct buffer *b;
+off_t p;
 {
-	while (p > 0 && buf_get(b, p - 1) != '\n')
+	while (p > 0 && b_get(b, p - 1) != '\n')
 		--p;
 	return p;
 }
 
 static off_t
-line_end(struct buffer *b, off_t p)
+line_end(b,p)
+struct buffer *b;
+off_t p;
 {
 	off_t n;
 
-	n = buf_size(b);
-	while (p < n && buf_get(b, p) != '\n')
+	n = b_size(b);
+	while (p < n && b_get(b, p) != '\n')
 		++p;
 	return p;
 }
 
 static off_t
-next_line(struct buffer *b, off_t p)
+next_line(b,p)
+struct buffer *b;
+off_t p;
 {
 	off_t q;
 
 	q = line_end(b, p);
-	if (q < buf_size(b))
+	if (q < b_size(b))
 		++q;
 	return q;
 }
 
 static int
-visual_col(struct buffer *b, off_t p)
+visual_col(b,p)
+struct buffer *b;
+off_t p;
 {
 	off_t q;
 	int col;
@@ -103,7 +114,7 @@ visual_col(struct buffer *b, off_t p)
 	q = line_start(b, p);
 	col = 0;
 	while (q < p) {
-		ch = buf_get(b, q++);
+		ch = b_get(b, q++);
 		if (ch == '\t')
 			col = (col + 8) & ~7;
 		else if (ch != '\n')
@@ -113,7 +124,10 @@ visual_col(struct buffer *b, off_t p)
 }
 
 static off_t
-at_column(struct buffer *b, off_t start, int want)
+at_column(b, start, want)
+struct buffer *b;
+off_t start;
+int want;
 {
 	off_t p;
 	off_t n;
@@ -122,9 +136,9 @@ at_column(struct buffer *b, off_t start, int want)
 	int ch;
 
 	p = start;
-	n = buf_size(b);
+	n = b_size(b);
 	col = 0;
-	while (p < n && (ch = buf_get(b, p)) != '\n') {
+	while (p < n && (ch = b_get(b, p)) != '\n') {
 		next = ch == '\t' ? (col + 8) & ~7 : col + 1;
 		if (next > want)
 			break;
@@ -135,7 +149,9 @@ at_column(struct buffer *b, off_t start, int want)
 }
 
 static void
-put_padded(char *s, int inverse)
+put_padded(s, inverse)
+char* s;
+int inverse;
 {
 	char out[MAXCOLS];
 	int width;
@@ -148,21 +164,22 @@ put_padded(char *s, int inverse)
 	(void)memcpy(out, s, n);
 	while (n < width)
 		out[n++] = ' ';
-	if (inverse)
-		term_put("\033[7m");
-	term_write(out, width);
-	if (inverse)
-		term_put("\033[0m");
+	/* DEMOS/VT52 doesn't have inverse -- AS */
+	/*if (inverse)
+		t_put("\033[7m");*/
+	t_write(out, width);
+	/*if (inverse)
+		t_put("\033[0m");*/
 }
 
 static int
-body_rows(void)
+body_rows()
 {
 	return E.rows > 6 ? E.rows - 4 : E.rows - 2;
 }
 
 static void
-ensure_visible(void)
+ensure_visible()
 {
 	off_t cur;
 	off_t p;
@@ -171,12 +188,12 @@ ensure_visible(void)
 	int i;
 	int col;
 
-	cur = buf_pos(&E.text);
+	cur = b_pos(&E.text);
 	body = body_rows();
 	if (E.top > cur)
 		E.top = line_start(&E.text, cur);
 	p = E.top;
-	for (i = 0; i < body && p <= buf_size(&E.text); ++i) {
+	for (i = 0; i < body && p <= b_size(&E.text); ++i) {
 		q = next_line(&E.text, p);
 		if (on_line(cur, p, q))
 			break;
@@ -187,7 +204,7 @@ ensure_visible(void)
 	while (i >= body) {
 		E.top = next_line(&E.text, E.top);
 		p = E.top;
-		for (i = 0; i < body && p <= buf_size(&E.text); ++i) {
+		for (i = 0; i < body && p <= b_size(&E.text); ++i) {
 			q = next_line(&E.text, p);
 			if (on_line(cur, p, q))
 				break;
@@ -202,7 +219,8 @@ ensure_visible(void)
 }
 
 static void
-draw_line(off_t start)
+draw_line(start)
+off_t start;
 {
 	char out[MAXCOLS];
 	off_t p;
@@ -217,9 +235,9 @@ draw_line(off_t start)
 	for (used = 0; used < width; ++used)
 		out[used] = ' ';
 	p = start;
-	n = buf_size(&E.text);
+	n = b_size(&E.text);
 	col = 0;
-	while (p < n && (ch = buf_get(&E.text, p++)) != '\n') {
+	while (p < n && (ch = b_get(&E.text, p++)) != '\n') {
 		count = ch == '\t' ? 8 - (col & 7) : 1;
 		while (count-- > 0) {
 			if (col >= E.hscroll && col - E.hscroll < width) {
@@ -235,11 +253,11 @@ draw_line(off_t start)
 		if (col >= E.hscroll + width)
 			break;
 	}
-	term_write(out, width);
+	t_write(out, width);
 }
 
 static void
-refresh(void)
+refresh()
 {
 	char title[MAXCOLS + 1];
 	off_t p;
@@ -251,25 +269,25 @@ refresh(void)
 	int ccol;
 	int cfound;
 
-	term_size(&E.rows, &E.cols);
+	t_size(&E.rows, &E.cols);
 	if (E.cols > MAXCOLS)
 		E.cols = MAXCOLS;
 	ensure_visible();
-	term_put("\033[?25l");
-	term_move(0, 0);
-	(void)strcpy(title, "  pico11       ");
-	(void)strncat(title, E.name[0] ? E.name : "New Buffer",
+	/* t_put("\033[?25l"); */
+	t_move(0, 0);
+	strcpy(title, "  pico11       ");
+	strncat(title, E.name[0] ? E.name : "New Buffer",
 	    MAXCOLS - strlen(title));
 	if (E.text.changed)
-		(void)strncat(title, "  (modified)", MAXCOLS - strlen(title));
+		strncat(title, "  (modified)", MAXCOLS - strlen(title));
 	put_padded(title, 1);
 	body = body_rows();
 	p = E.top;
-	cur = buf_pos(&E.text);
+	cur = b_pos(&E.text);
 	crow = 0;
 	cfound = 0;
 	for (row = 0; row < body; ++row) {
-		term_move(row + 1, 0);
+		t_move(row + 1, 0);
 		draw_line(p);
 		q = next_line(&E.text, p);
 		if (!cfound && on_line(cur, p, q)) {
@@ -279,25 +297,28 @@ refresh(void)
 		if (q != p)
 			p = q;
 	}
-	term_move(body + 1, 0);
+	t_move(body + 1, 0);
 	put_padded(E.message, 1);
 	if (E.rows > 6) {
-		term_move(body + 2, 0);
-		put_padded("^G Help  ^O Write Out  ^W Where Is  ^K Cut  ^U Uncut", 0);
-		term_move(body + 3, 0);
-		put_padded("^X Exit  ^R Read File  ^C Position  ^A Home  ^E End", 0);
+	 t_move(body + 2, 0);
+	 put_padded("^G Help  ^W Write Out  ^F Where Is  ^K Cut  ^U Uncut", 0);
+	 t_move(body + 3, 0);
+	 put_padded("^X Exit  ^R Read File  ^C Position  ^A Home  ^E End", 0);
 	}
 	ccol = visual_col(&E.text, cur) - E.hscroll;
 	if (ccol < 0)
 		ccol = 0;
 	if (ccol >= E.cols)
 		ccol = E.cols - 1;
-	term_move(crow + 1, ccol);
-	term_put("\033[?25h");
+	t_move(crow + 1, ccol);
+	/* t_put("\033[?25h"); */
 }
 
 static int
-prompt(char *label, char *answer, int size)
+prompt(label, answer, size)
+char* label;
+char* answer;
+int size;
 {
 	int n;
 	int key;
@@ -305,12 +326,12 @@ prompt(char *label, char *answer, int size)
 
 	n = strlen(answer);
 	for (;;) {
-		(void)strncpy(shown, label, MAXCOLS);
+		strncpy(shown, label, MAXCOLS);
 		shown[MAXCOLS] = '\0';
-		(void)strncat(shown, answer, MAXCOLS - strlen(shown));
+		strncat(shown, answer, MAXCOLS - strlen(shown));
 		message(shown);
 		refresh();
-		key = term_key();
+		key = t_key();
 		if (key == '\r' || key == '\n')
 			return 1;
 		if (key == CTRL('C') || key == 27) {
@@ -328,19 +349,20 @@ prompt(char *label, char *answer, int size)
 }
 
 static void
-move_vertical(int down)
+move_vertical(down)
+int down;
 {
 	off_t cur;
 	off_t start;
 	off_t target;
 
-	cur = buf_pos(&E.text);
+	cur = b_pos(&E.text);
 	start = line_start(&E.text, cur);
 	if (E.wanted < 0)
 		E.wanted = visual_col(&E.text, cur);
 	if (down) {
 		target = line_end(&E.text, start);
-		if (target == buf_size(&E.text))
+		if (target == b_size(&E.text))
 			return;
 		++target;
 	} else {
@@ -348,11 +370,12 @@ move_vertical(int down)
 			return;
 		target = line_start(&E.text, start - 1);
 	}
-	(void)buf_seek(&E.text, at_column(&E.text, target, E.wanted));
+	(void)b_seek(&E.text, at_column(&E.text, target, E.wanted));
 }
 
 static void
-page_move(int down)
+page_move(down)
+int down;
 {
 	int i;
 	int count;
@@ -360,31 +383,31 @@ page_move(int down)
 	count = body_rows() - 1;
 	for (i = 0; i < count; ++i)
 		move_vertical(down);
-	E.top = line_start(&E.text, buf_pos(&E.text));
+	E.top = line_start(&E.text, b_pos(&E.text));
 }
 
 static void
-do_write(void)
+do_write()
 {
 	char name[MAXNAME + 1];
 
-	(void)strcpy(name, E.name);
+	strcpy(name, E.name);
 	if (!prompt("File Name to Write: ", name, sizeof name))
 		return;
 	if (!name[0]) {
 		message("No file name");
 		return;
 	}
-	if (buf_save(&E.text, name) < 0) {
+	if (b_save(&E.text, name) < 0) {
 		message("Error writing file");
 		return;
 	}
-	(void)strcpy(E.name, name);
+	strcpy(E.name, name);
 	message("Wrote file");
 }
 
 static void
-do_read(void)
+do_read()
 {
 	char name[MAXNAME + 1];
 	char block[BUF_CACHE];
@@ -402,18 +425,18 @@ do_read(void)
 	}
 	while ((n = read(fd, block, sizeof block)) > 0) {
 		for (i = 0; i < n; ++i) {
-			if (buf_insert(&E.text, (unsigned char)block[i]) < 0)
+			if (b_insert(&E.text, block[i]) < 0)
 				break;
 		}
 		if (i != n)
 			break;
 	}
-	(void)close(fd);
+	close(fd);
 	message(n < 0 || (n > 0 && i != n) ? "Read error" : "Inserted file");
 }
 
 static void
-do_search(void)
+do_search()
 {
 	char pat[80];
 	off_t start;
@@ -428,17 +451,17 @@ do_search(void)
 	if (!prompt("Search: ", pat, sizeof pat) || !pat[0])
 		return;
 	len = strlen(pat);
-	n = buf_size(&E.text);
-	start = buf_pos(&E.text);
+	n = b_size(&E.text);
+	start = b_pos(&E.text);
 	p = start < n ? start + 1 : 0;
 	for (pass = 0; pass < 2; ++pass) {
 		while (p + len <= n && (pass == 0 || p <= start)) {
 			for (i = 0, q = p; i < len; ++i, ++q) {
-				if (buf_get(&E.text, q) != (unsigned char)pat[i])
+				if (b_get(&E.text, q) != pat[i])
 					break;
 			}
 			if (i == len) {
-				(void)buf_seek(&E.text, p);
+				b_seek(&E.text, p);
 				message("Found");
 				return;
 			}
@@ -450,7 +473,7 @@ do_search(void)
 }
 
 static void
-do_position(void)
+do_position()
 {
 	off_t p;
 	off_t n;
@@ -458,34 +481,34 @@ do_position(void)
 	long line;
 	int col;
 
-	p = buf_pos(&E.text);
-	n = buf_size(&E.text);
+	p = b_pos(&E.text);
+	n = b_size(&E.text);
 	line = 1;
 	for (i = 0; i < p; ++i) {
-		if (buf_get(&E.text, i) == '\n')
+		if (b_get(&E.text, i) == '\n')
 			++line;
 	}
 	col = visual_col(&E.text, p) + 1;
-	(void)sprintf(E.message, "line %ld, column %d, character %ld of %ld",
+	sprintf(E.message, "line %ld, column %d, character %ld of %ld",
 	    line, col, (long)p, (long)n);
 }
 
 static void
-do_cut(void)
+do_cut()
 {
 	int ch;
 	int any;
-	unsigned char c;
+	char c;
 
 	if (!E.cutappend) {
-		(void)ftruncate(E.cutfd, (off_t)0);
-		(void)lseek(E.cutfd, (off_t)0, L_SET);
+		ftruncate(E.cutfd, (off_t)0);
+		lseek(E.cutfd, (off_t)0, L_SET);
 	} else
-		(void)lseek(E.cutfd, (off_t)0, L_XTND);
+		lseek(E.cutfd, (off_t)0, L_XTND);
 	any = 0;
-	while ((ch = buf_delete(&E.text)) >= 0) {
-		c = (unsigned char)ch;
-		(void)write(E.cutfd, (char *)&c, 1);
+	while ((ch = b_delete(&E.text)) >= 0) {
+		c = ch;
+		write(E.cutfd, (char *)&c, 1);
 		any = 1;
 		if (ch == '\n')
 			break;
@@ -495,22 +518,22 @@ do_cut(void)
 }
 
 static void
-do_uncut(void)
+do_uncut()
 {
 	char block[BUF_CACHE];
 	int n;
 	int i;
 
-	(void)lseek(E.cutfd, (off_t)0, L_SET);
+	lseek(E.cutfd, (off_t)0, L_SET);
 	while ((n = read(E.cutfd, block, sizeof block)) > 0) {
 		for (i = 0; i < n; ++i)
-			(void)buf_insert(&E.text, (unsigned char)block[i]);
+			b_insert(&E.text, block[i]);
 	}
 	message("Uncut text");
 }
 
 static void
-help(void)
+help()
 {
 	int body;
 	int row;
@@ -529,17 +552,17 @@ help(void)
 	lines[10] = "";
 	lines[11] = "";
 	body = E.rows < 12 ? E.rows : 12;
-	term_clear();
+	t_clear();
 	for (row = 0; row < body; ++row) {
-		term_move(row, 0);
+		t_move(row, 0);
 		put_padded(lines[row], row == 0);
 	}
-	(void)term_key();
+	t_key();
 	message("");
 }
 
 static int
-confirm_exit(void)
+confirm_exit()
 {
 	int key;
 
@@ -547,7 +570,7 @@ confirm_exit(void)
 		return 1;
 	message("Save modified buffer?  Y Yes  N No  ^C Cancel");
 	refresh();
-	key = term_key();
+	key = t_key();
 	if (key == 'y' || key == 'Y') {
 		do_write();
 		return !E.text.changed;
@@ -559,13 +582,13 @@ confirm_exit(void)
 }
 
 static void
-edit_loop(void)
+edit_loop()
 {
 	int key;
 
 	for (;;) {
 		refresh();
-		key = term_key();
+		key = t_key();
 		if (key < 0)
 			return;
 		if (key != CTRL('K'))
@@ -575,11 +598,11 @@ edit_loop(void)
 				return;
 		} else if (key == CTRL('G')) {
 			help();
-		} else if (key == CTRL('O')) {
+		} else if (key == CTRL('W')) {
 			do_write();
 		} else if (key == CTRL('R')) {
 			do_read();
-		} else if (key == CTRL('W')) {
+		} else if (key == CTRL('F')) {
 			do_search();
 		} else if (key == CTRL('C')) {
 			do_position();
@@ -588,84 +611,86 @@ edit_loop(void)
 		} else if (key == CTRL('U')) {
 			do_uncut();
 		} else if (key == KEY_LEFT || key == CTRL('B')) {
-			(void)buf_left(&E.text);
+			b_left(&E.text);
 			E.wanted = -1;
-		} else if (key == KEY_RIGHT || key == CTRL('F')) {
-			(void)buf_right(&E.text);
+		} else if (key == KEY_RIGHT || key == CTRL('V')) {
+			b_right(&E.text);
 			E.wanted = -1;
 		} else if (key == KEY_UP || key == CTRL('P')) {
 			move_vertical(0);
-		} else if (key == KEY_DOWN || key == CTRL('N')) {
+		} else if (key == KEY_DOWN || key == CTRL('T')) {
 			move_vertical(1);
 		} else if (key == KEY_HOME || key == CTRL('A')) {
-			(void)buf_seek(&E.text, line_start(&E.text, buf_pos(&E.text)));
+			b_seek(&E.text,line_start(&E.text,b_pos(&E.text)));
 			E.wanted = -1;
 		} else if (key == KEY_END || key == CTRL('E')) {
-			(void)buf_seek(&E.text, line_end(&E.text, buf_pos(&E.text)));
+			b_seek(&E.text,line_end(&E.text,b_pos(&E.text)));
 			E.wanted = -1;
 		} else if (key == KEY_PGUP) {
 			page_move(0);
 		} else if (key == KEY_PGDN) {
 			page_move(1);
 		} else if (key == KEY_DELETE || key == CTRL('D')) {
-			(void)buf_delete(&E.text);
+			b_delete(&E.text);
 			E.wanted = -1;
 		} else if (key == 127 || key == CTRL('H')) {
-			(void)buf_backspace(&E.text);
+			b_backspace(&E.text);
 			E.wanted = -1;
 		} else if (key == '\r' || key == '\n') {
-			(void)buf_insert(&E.text, '\n');
+			b_insert(&E.text, '\n');
 			E.wanted = -1;
 		} else if (key == '\t' || (key >= 32 && key < 256)) {
-			(void)buf_insert(&E.text, key);
+			b_insert(&E.text, key);
 			E.wanted = -1;
 		}
 	}
 }
 
 static int
-make_cutfile(void)
+make_cutfile()
 {
 	char path[32];
 	int fd;
 
-	(void)strcpy(path, "/tmp/pico11cutXXXXXX");
+	strcpy(path, "/tmp/p11cutXXXX");
 	fd = mkstemp(path);
 	if (fd >= 0)
-		(void)unlink(path);
+		unlink(path);
 	return fd;
 }
 
 int
-main(int argc, char **argv)
+main(argc, argv)
+int argc;
+char** argv;
 {
 	char *name;
 
 	name = argc > 1 ? argv[1] : "";
-	(void)memset((char *)&E, 0, sizeof E);
+	memset((char *)&E, 0, sizeof E);
 	E.text.left = E.text.right = -1;
 	E.cutfd = -1;
 	E.wanted = -1;
 	if (strlen(name) > MAXNAME) {
-		(void)fprintf(stderr, "pico11: file name too long\n");
+		fprintf(stderr, "pico11: file name too long\n");
 		return 1;
 	}
-	(void)strcpy(E.name, name);
-	if (buf_open(&E.text, name) < 0) {
-		(void)fprintf(stderr, "pico11: cannot open %s: %s\n", name,
-		    strerror(errno));
-		buf_close(&E.text);
+	strcpy(E.name, name);
+	if (b_open(&E.text, name) < 0) {
+		fprintf(stderr, "pico11: cannot open %s: %s\n", name,
+		    sys_errlist[errno]);
+		b_close(&E.text);
 		return 1;
 	}
 	E.cutfd = make_cutfile();
-	if (E.cutfd < 0 || term_open() < 0) {
+	if (E.cutfd < 0 || t_open() < 0) {
 		(void)fprintf(stderr, "pico11: cannot initialize terminal or scratch file\n");
 		die(0);
 		return 1;
 	}
-	(void)signal(SIGHUP, die);
-	(void)signal(SIGTERM, die);
-	(void)signal(SIGINT, die);
+	signal(SIGHUP, die);
+	signal(SIGTERM, die);
+	signal(SIGINT, die);
 	message("Use ^G for help");
 	edit_loop();
 	die(0);

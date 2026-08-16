@@ -2,32 +2,35 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "pdp11_compat.h"
 #include "buffer.h"
 
-#define TEST_SIZE 200000L
+#define TEST_SIZE 50000L
 
 static int
-value_at(long i)
+value_at(i)
+	long i;
 {
 	return (int)(i % 251) + 1;
 }
 
 static void
-fail(char *s)
+fail(s)
+	char* s;
 {
-	(void)fprintf(stderr, "test_buffer: %s\n", s);
+	fprintf(stderr, "test_buffer: %s\n", s);
 	exit(1);
 }
 
 int
-main(void)
+main(argc,argv)
+	int argc;
+	char** argv;
 {
 	char source[32];
 	char output[32];
-	unsigned char block[256];
+	char block[256];
 	struct buffer b;
 	long made;
 	long i;
@@ -35,8 +38,8 @@ main(void)
 	int n;
 	int ch;
 
-	(void)strcpy(source, "/tmp/p11srcXXXXXX");
-	(void)strcpy(output, "/tmp/p11outXXXXXX");
+	strcpy(source, "/tmp/psrcXXXXXX");
+	strcpy(output, "/tmp/poutXXXXXX");
 	fd = mkstemp(source);
 	if (fd < 0)
 		fail("mkstemp source");
@@ -50,35 +53,35 @@ main(void)
 			fail("write source");
 		made += n;
 	}
-	(void)close(fd);
+	close(fd);
 	fd = mkstemp(output);
 	if (fd < 0)
 		fail("mkstemp output");
-	(void)close(fd);
-	(void)unlink(output);
+	close(fd);
+	unlink(output);
 	b.left = b.right = -1;
-	if (buf_open(&b, source) < 0)
-		fail("buf_open");
-	if (buf_size(&b) != TEST_SIZE || buf_pos(&b) != 0) {
-		(void)fprintf(stderr, "test_buffer: size %ld, position %ld\n",
-		    (long)buf_size(&b), (long)buf_pos(&b));
+	if (b_open(&b, source) < 0)
+		fail("b_open");
+	if (b_size(&b) != TEST_SIZE || b_pos(&b) != 0) {
+		fprintf(stderr, "test_buffer: size %ld, position %ld\n",
+		    (long)b_size(&b), (long)b_pos(&b));
 		fail("initial size or position");
 	}
 	for (i = 0; i < TEST_SIZE; ++i) {
-		if (buf_get(&b, i) != value_at(i))
+		if (b_get(&b, i) != value_at(i))
 			fail("loaded byte order");
 	}
-	if (buf_seek(&b, (off_t)1000) < 0 || b.changed)
+	if (b_seek(&b, (off_t)1000) < 0 || b.changed)
 		fail("seek changed document");
-	if (buf_insert(&b, 'Z') < 0)
+	if (b_insert(&b, 'Z') < 0)
 		fail("insert");
-	if (buf_delete(&b) != value_at(1000))
+	if (b_delete(&b) != value_at(1000))
 		fail("delete");
-	if (buf_seek(&b, buf_size(&b)) < 0 || buf_insert(&b, 'Q') < 0)
+	if (b_seek(&b, b_size(&b)) < 0 || b_insert(&b, 'Q') < 0)
 		fail("append");
-	if (buf_save(&b, output) < 0 || b.changed)
+	if (b_save(&b, output) < 0 || b.changed)
 		fail("save");
-	buf_close(&b);
+	b_close(&b);
 	fd = open(output, O_RDONLY, 0);
 	if (fd < 0)
 		fail("open output");
@@ -91,9 +94,9 @@ main(void)
 	}
 	if (read(fd, (char *)&block[0], 1) != 0)
 		fail("long output");
-	(void)close(fd);
-	(void)unlink(source);
-	(void)unlink(output);
-	(void)printf("buffer tests passed\n");
+	close(fd);
+	unlink(source);
+	unlink(output);
+	printf("buffer tests passed\n");
 	return 0;
 }
