@@ -25,6 +25,12 @@ struct editor {
 	int wanted;
 	int cutfd;
 	int cutappend;
+	/* @vak: what the body was drawn from.
+	refresh() skips the body repaint when none
+	of these has changed */
+	long lstver; /* AS: shorten names */
+	off_t lsttop;
+	int lsthscr;
 	char message[MAXCOLS + 1];
 };
 
@@ -35,6 +41,12 @@ static off_t line_end();
 static off_t next_line();
 static int visual_col();
 static refresh();
+
+/* @vak: force a full body repaint */
+static void repaint()
+{
+	E.lstver = -1;
+}
 
 static int on_line(cur,start,next)
 off_t cur, start, next;
@@ -243,7 +255,9 @@ off_t start;
 			if (col >= E.hscroll && col - E.hscroll < width) {
 				if (ch == '\t')
 					out[col - E.hscroll] = ' ';
-				else if (ch < 32 || ch == 127)
+				/* cyrillic -- AS */
+				else if ((unsigned)(ch & 0377) < 32 
+					|| ch == 127)
 					out[col - E.hscroll] = '?';
 				else
 					out[col - E.hscroll] = ch;
@@ -268,11 +282,19 @@ refresh()
 	int crow;
 	int ccol;
 	int cfound;
+	int full;
 
 	t_size(&E.rows, &E.cols);
 	if (E.cols > MAXCOLS)
 		E.cols = MAXCOLS;
 	ensure_visible();
+	/* @vak: repaint the body only when the doc
+		or the viewport changed */
+	full = (E.text.version != E.lstver) || (E.top != E.lsttop) ||
+		(E.hscroll != E.lsthscr);
+	E.lstver = E.text.version;
+	E.lsttop = E.top;
+	E.lsthscr = E.hscroll;
 	/* t_put("\033[?25l"); */
 	t_move(0, 0);
 	strcpy(title, "  pico11       ");
@@ -287,8 +309,10 @@ refresh()
 	crow = 0;
 	cfound = 0;
 	for (row = 0; row < body; ++row) {
-		t_move(row + 1, 0);
-		draw_line(p);
+		if (full) {
+			t_move(row + 1, 0);
+			draw_line(p);
+		}
 		q = next_line(&E.text, p);
 		if (!cfound && on_line(cur, p, q)) {
 			crow = row;
@@ -299,7 +323,7 @@ refresh()
 	}
 	t_move(body + 1, 0);
 	put_padded(E.message, 1);
-	if (E.rows > 6) {
+	if (full && E.rows > 6) {
 	 t_move(body + 2, 0);
 	 put_padded("^G Help  ^W Write Out  ^F Where Is  ^K Cut  ^U Uncut", 0);
 	 t_move(body + 3, 0);
@@ -559,6 +583,7 @@ help()
 	}
 	t_key();
 	message("");
+	repaint();
 }
 
 static int
@@ -671,6 +696,7 @@ char** argv;
 	E.text.left = E.text.right = -1;
 	E.cutfd = -1;
 	E.wanted = -1;
+	repaint(); /* @vak: ensure first refresh draws the full screen */
 	if (strlen(name) > MAXNAME) {
 		fprintf(stderr, "pico11: file name too long\n");
 		return 1;

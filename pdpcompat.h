@@ -18,7 +18,6 @@ int write();
 char* memcpy();
 char* memset();
 char* mktemp();
-int rename();
 
 #else
 #include <unistd.h>

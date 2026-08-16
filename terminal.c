@@ -18,6 +18,23 @@ static struct termios saved_tty;
 #endif
 
 static int opened;
+/* @vak: terminal buffer */
+#define	OBUF	1024
+static char obuf[OBUF];
+static int onext;
+
+/* @vak: flushing terminal */
+t_flush()
+{
+	int done = 0;
+	int k;
+	while (done < onext) {
+		k = write(1, obuf+done, onext-done);
+		if (k <= 0) break;
+		done += k;
+	}
+	onext = 0;
+}
 
 int
 t_open()
@@ -49,6 +66,7 @@ t_open()
 #endif
 	opened = 1;
 /*	t_put("\033[?25l"); */
+	t_flush();
 	return 0;
 }
 
@@ -59,6 +77,7 @@ t_close()
 	/* doesn't work on DEMOS/VT52 */
 	/* t_put("\033[?25h\033[0m\033[H\033[J"); */
 	t_put("\033H\033J");
+	t_flush();
 #ifdef PICO_SGTTY
 	stty(0, &saved_tty);
 #else
@@ -88,23 +107,19 @@ t_write(s, n)
 char* s;
 int n;
 {
-	/* This function looks strange because
-	just write can be used, if we don't
-	check the result.
-	Maybe, I couldn't catch the idea. -- AS */
-	/*
-	int done;
+	/* @vak: this function was replaced to use buf */
 	int k;
-
-	done = 0;
-	while (done < n) {
-		k = write(1, s + done, n - done);
-		if (k <= 0)
-			return;
-		done += k;
+	while (n > 0) {
+		if (onext == OBUF)
+			t_flush();
+		k = OBUF - onext;
+		if (k > n)
+			k = n;
+		memcpy(obuf + onext, s, k);
+		onext += k;
+		s += k;
+		n -= k;
 	}
-	*/
-	write (1, s, n);
 }
 
 t_put(s)
@@ -147,6 +162,7 @@ t_key()
 	int c;
 	char s[3];
 
+	t_flush();
 	a = readone();
 	if (a != 27)
 		return a;

@@ -81,6 +81,7 @@ char* name;
 	b->nleft = 0;
 	b->nright = 0;
 	b->changed = 0;
+	b->version = 0;
 	uncache(b);
 	if (b->left < 0 || b->right < 0)
 		return -1;
@@ -175,7 +176,7 @@ off_t pos;
 		b->cachebase = base;
 		b->cachelen = n;
 	}
-	return b->cache[(int)(physical - b->cachebase)];
+	return b->cache[(int)(physical - b->cachebase)] & 0377;
 }
 
 int
@@ -186,6 +187,7 @@ int ch;
 	if (lseek(b->left, b->nleft, L_SET) < 0 || putone(b->left, ch) < 0)
 		return -1;
 	++b->nleft;
+	++b->version;
 	b->changed = 1;
 	uncache(b);
 	return 0;
@@ -200,6 +202,7 @@ struct buffer *b;
 	ch = popone(b->left, &b->nleft);
 	if (ch < 0)
 		return -1;
+	++b->version;
 	b->changed = 1;
 	uncache(b);
 	return ch;
@@ -214,6 +217,7 @@ struct buffer* b;
 	ch = popone(b->right, &b->nright);
 	if (ch < 0)
 		return -1;
+	++b->version;
 	b->changed = 1;
 	uncache(b);
 	return ch;
@@ -319,30 +323,18 @@ off_t len;
 	return 0;
 }
 
+/* @vak: no rename, and link/unlink don't work if file exists
+then, simplify it */
+
 int
 b_save(b, name)
 struct buffer* b;
 char* name;
 {
-	char temp[256];
-	char *slash;
-	struct stat st;
 	int out;
 	int ok;
-	int have_mode;
 
-	if (strlen(name) > sizeof temp - 16)
-		return -1;
-	slash = rindex(name, '/');
-	if (slash != (char *)0) {
-		memcpy(temp, name, slash - name + 1);
-		temp[slash - name + 1] = '\0';
-		strcat(temp, ".pXXXX");
-	} else
-		strcpy(temp, ".pXXXX");
-	have_mode = stat(name, &st) == 0;
-	mktemp(temp); /* use mktemp for chmod -- AS */
-	out = open(temp, O_CREAT|O_EXCL|O_RDWR, 0644);
+	out = creat(name, 0666);
 	if (out < 0)
 		return -1;
 	ok = copy_forward(out, b->left, b->nleft);
@@ -350,13 +342,7 @@ char* name;
 		ok = copy_reverse(out, b->right, b->nright);
 	if (close(out) < 0)
 		ok = -1;
-	if (have_mode)
-		chmod(temp, st.st_mode & 07777); 
-	if (ok == 0 && rename(temp, name) < 0)
-		ok = -1;
-	if (ok < 0)
-		unlink(temp);
-	else
+	if (ok == 0)
 		b->changed = 0;
 	return ok;
 }

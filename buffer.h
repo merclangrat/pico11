@@ -13,6 +13,9 @@ struct buffer {
 	off_t nleft;
 	off_t nright;
 	int changed;
+	/* @vak: let's refresh distinguish a cursor move
+	(repaint nothing) from an edit (repaint the body) */
+	int version;
 	int cachefd;
 	off_t cachebase;
 	int cachelen;
